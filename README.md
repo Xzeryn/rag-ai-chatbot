@@ -1,93 +1,262 @@
-# ai-chatbot
+AI Chatbot
 
+Write me step by step instructions to create a new AI chatbot using React, Node.js, Vite and amazon bedrock using api keys and using the Claude 3.5 Sonnet. Include a directory structure. Display in markdown
 
+Here are step-by-step instructions to create a new AI chatbot using React, Node.js, Vite, Amazon Bedrock, and Claude 3.5 Sonnet, presented in markdown format:
 
-## Getting started
+# Creating an AI Chatbot with React, Node.js, Vite, and Amazon Bedrock (Claude 3.5 Sonnet)
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Directory Structure
 
 ```
-cd existing_repo
-git remote add origin http://gitlab.myhousetech.net/elastic.dev/ai-chatbot.git
-git branch -M main
-git push -uf origin main
+ai-chatbot/
+├── client/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ChatInterface.jsx
+│   │   │   └── Message.jsx
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── server/
+│   ├── routes/
+│   │   └── chat.js
+│   ├── .env
+│   ├── package.json
+│   └── server.js
+└── README.md
 ```
 
-## Integrate with your tools
+## Step-by-step Instructions
 
-- [ ] [Set up project integrations](http://gitlab.myhousetech.net/elastic.dev/ai-chatbot/-/settings/integrations)
+1. Set up the project structure:
 
-## Collaborate with your team
+  ```bash
+  mkdir ai-chatbot
+  cd ai-chatbot
+  mkdir client server
+  ```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+2. Set up the client (React + Vite):
 
-## Test and Deploy
+  ```bash
+  cd client
+  npm create vite@latest . -- --template react
+  npm install axios
+  ```
 
-Use the built-in continuous integration in GitLab.
+3. Set up the server (Node.js):
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+  ```bash
+  cd ../server
+  npm init -y
+  npm install express cors dotenv @aws-sdk/client-bedrock-runtime
+  ```
 
-***
+4. Configure Amazon Bedrock:
 
-# Editing this README
+  - Sign up for an AWS account if you don't have one
+  - Set up Amazon Bedrock and obtain the necessary API keys
+  - Create a `.env` file in the `server` directory:
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+    ```
+    AWS_ACCESS_KEY_ID=your_access_key
+    AWS_SECRET_ACCESS_KEY=your_secret_key
+    AWS_REGION=your_region
+    ```
 
-## Suggestions for a good README
+5. Create the server (`server/server.js`):
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+  ```javascript
+  const express = require("express");
+  const cors = require("cors");
+  const dotenv = require("dotenv");
+  const chatRouter = require("./routes/chat");
 
-## Name
-Choose a self-explaining name for your project.
+  dotenv.config();
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+  const app = express();
+  app.use(cors());
+  app.use(express.json());
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+  app.get("/", (req, res) => {
+    res.send("AI Chatbot Server is running");
+  });
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+  app.use("/api/chat", chatRouter);
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  ```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+6. Create the chat route (`server/routes/chat.js`):
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+  ```javascript
+  const express = require("express");
+  const {
+    BedrockRuntimeClient,
+    InvokeModelCommand,
+  } = require("@aws-sdk/client-bedrock-runtime");
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+  const router = express.Router();
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+  const client = new BedrockRuntimeClient({
+    region: process.env.AWS_REGION,
+  });
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+  router.post("/", async (req, res) => {
+    try {
+      const { message } = req.body;
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+      const params = {
+        modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+        contentType: "application/json",
+        accept: "application/json",
+        body: JSON.stringify({
+          anthropic_version: "bedrock-2023-05-31",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "user",
+              content: message,
+            },
+          ],
+        }),
+      };
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+      const command = new InvokeModelCommand(params);
+      const response = await client.send(command);
 
-## License
-For open source projects, say how it is licensed.
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+      res.json({ reply: responseBody.content[0].text });
+    } catch (error) {
+      console.error("Error:", error);
+      res
+        .status(500)
+        .json({ error: "An error occurred while processing your request." });
+    }
+  });
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+  module.exports = router;
+  ```
+
+7. Create the React components:
+
+  `client/src/components/Message.jsx`:
+
+  ```jsx
+  const Message = ({ text, isUser }) => (
+    <div className={`message ${isUser ? "user" : "bot"}`}>
+      <p>{text}</p>
+    </div>
+  );
+
+  export default Message;
+  ```
+
+  `client/src/components/ChatInterface.jsx`:
+
+  ```jsx
+  import { useState } from "react";
+  import axios from "axios";
+  import Message from "./Message";
+
+  const ChatInterface = () => {
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState("");
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      if (!input.trim()) return;
+
+      const userMessage = { text: input, isUser: true };
+      setMessages([...messages, userMessage]);
+      setInput("");
+
+      try {
+        const response = await axios.post("http://localhost:5000/api/chat", {
+          message: input,
+        });
+        const botMessage = { text: response.data.reply, isUser: false };
+        setMessages((prevMessages) => [...prevMessages, botMessage]);
+      } catch (error) {
+        console.error("Error:", error);
+      }
+    };
+
+    return (
+      <div className="chat-interface">
+        <div className="messages">
+          {messages.map((message, index) => (
+            <Message key={index} text={message.text} isUser={message.isUser} />
+          ))}
+        </div>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+          />
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    );
+  };
+
+  export default ChatInterface;
+  ```
+
+8. Update `client/src/App.jsx`:
+
+  ```jsx
+  import ChatInterface from "./components/ChatInterface";
+
+  function App() {
+    return (
+      <div className="App">
+        <h1>AI Chatbot</h1>
+        <ChatInterface />
+      </div>
+    );
+  }
+
+  export default App;
+  ```
+
+9. Update `client/vite.config.js`
+
+  ```js
+  import { defineConfig } from "vite";
+  import react from "@vitejs/plugin-react";
+
+  // https://vitejs.dev/config/
+  export default defineConfig({
+    plugins: [react()],
+    server: {
+      host: true,
+    },
+  });
+  ```
+
+10. Start the server:
+
+  ```bash
+  cd server
+  node server.js
+  ```
+
+11. Start the client:
+
+  ```bash
+  cd client
+  npm run dev
+  ```
+
+12. Open your browser and navigate to `http://localhost:5173` to use your AI chatbot.
+
+Remember to handle errors, add proper styling, and implement additional features as needed for a production-ready application.
+
+This markdown-formatted guide provides a comprehensive set of instructions for creating an AI chatbot using React, Node.js, Vite, and Amazon Bedrock with Claude 3.5 Sonnet. It includes the directory structure and step-by-step instructions for setting up both the client and server sides of the application.
