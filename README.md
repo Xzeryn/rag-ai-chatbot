@@ -1,8 +1,4 @@
-AI Chatbot
-
-Write me step by step instructions to create a new AI chatbot using React, Node.js, Vite and amazon bedrock using api keys and using the Claude 3.5 Sonnet. Include a directory structure. Display in markdown
-
-Here are step-by-step instructions to create a new AI chatbot using React, Node.js, Vite, Amazon Bedrock, and Claude 3.5 Sonnet, presented in markdown format:
+Here are step-by-step instructions to create a new AI chatbot using React, Node.js, Vite, Amazon Bedrock, and Claude 3.5 Sonnet:
 
 # Creating an AI Chatbot with React, Node.js, Vite, and Amazon Bedrock (Claude 3.5 Sonnet)
 
