@@ -41,7 +41,7 @@ ai-chatbot/
   ```bash
   cd client
   npm create vite@latest . -- --template react
-  npm install dompurify marked
+  npm install dompurify dotenv marked
   ```
 
 3. Set up the server (Node.js):
@@ -131,7 +131,7 @@ ai-chatbot/
   const express = require('express');
   const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require("@aws-sdk/client-bedrock-runtime");
   const elasticsearchClient = require('../elasticsearchClient');
-  const { marked } = require('marked');
+  require('dotenv').config();
 
   const router = express.Router();
 
@@ -141,33 +141,95 @@ ai-chatbot/
 
   // Load environment variables
   const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE || "You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
-  const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500; // Default to 500 if not set
-  const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7; // Default to 0.7 if not set
-  const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base'; // Default to 'knowledge_base' if not set
+  const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500;
+  const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7;
+  const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base';
+  const ELASTICSEARCH_CONTENT_FIELD = process.env.ELASTICSEARCH_CONTENT_FIELD || 'content';
+  const ELASTICSEARCH_SEMANTIC_FIELD = process.env.ELASTICSEARCH_SEMANTIC_FIELD || 'semantic_content';
+
+  // Diagnostic function to check Elasticsearch setup
+  async function checkElasticsearchSetup() {
+    try {
+      const indexExists = await elasticsearchClient.indices.exists({ index: ELASTICSEARCH_INDEX });
+      console.log(`Index ${ELASTICSEARCH_INDEX} exists:`, indexExists);
+
+      if (indexExists) {
+        const mapping = await elasticsearchClient.indices.getMapping({ index: ELASTICSEARCH_INDEX });
+        console.log('Index mapping:', JSON.stringify(mapping, null, 2));
+
+        const sampleDoc = await elasticsearchClient.search({
+          index: ELASTICSEARCH_INDEX,
+          body: { query: { match_all: {} }, size: 1 }
+        });
+        console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
+      }
+
+      // Check Elasticsearch version
+      const info = await elasticsearchClient.info();
+      console.log('Elasticsearch version:', info.version.number);
+
+      // Check ELSER model status
+      try {
+        const modelInfo = await elasticsearchClient.ml.getTrainedModels({ model_id: ".elser_model_1" });
+        console.log('ELSER model info:', JSON.stringify(modelInfo, null, 2));
+      } catch (modelError) {
+        console.error('Error checking ELSER model:', modelError);
+      }
+
+      // Perform a test search
+      console.log('Performing test search...');
+      const testQuery = 'elasticsearch';
+      const testResult = await searchElasticsearch(testQuery);
+      console.log('Test search result:', testResult);
+
+    } catch (error) {
+      console.error('Error checking Elasticsearch setup:', error);
+    }
+  }
+
+  // Call the diagnostic function
+  checkElasticsearchSetup();
 
   async function searchElasticsearch(query) {
     try {
-      const result = await elasticsearchClient.search({
-        index: ELASTICSEARCH_INDEX,
-        body: {
-          query: {
-            match: {
-              content: query
-            }
+      const searchBody = {
+        query: {
+          bool: {
+            should: [
+              { match: { [ELASTICSEARCH_CONTENT_FIELD]: query } },
+              {
+                semantic: {
+                  field: ELASTICSEARCH_SEMANTIC_FIELD,
+                  query: query,
+                  boost: 2  // Give more weight to semantic search
+                }
+              }
+            ]
           }
         }
+      };
+
+      console.log('Elasticsearch query:', JSON.stringify(searchBody, null, 2));
+
+      const result = await elasticsearchClient.search({
+        index: ELASTICSEARCH_INDEX,
+        body: searchBody
       });
 
-      console.log('Elasticsearch result:', JSON.stringify(result, null, 2));
+      console.log('Elasticsearch index:', ELASTICSEARCH_INDEX);
+      console.log('Elasticsearch result hits:', result.hits.total.value);
 
-      if (result && result.hits && result.hits.hits) {
-        return result.hits.hits.map(hit => hit._source.content).join(' ');
+      if (result.hits && result.hits.hits && result.hits.hits.length > 0) {
+        return result.hits.hits.map(hit => hit._source[ELASTICSEARCH_CONTENT_FIELD]).join('\n\n');
       } else {
         console.log('No hits found in Elasticsearch result');
         return '';
       }
     } catch (error) {
       console.error('Elasticsearch error:', error);
+      if (error.meta && error.meta.body) {
+        console.error('Elasticsearch error details:', error.meta.body.error);
+      }
       return '';
     }
   }
@@ -184,7 +246,6 @@ ai-chatbot/
     try {
       const context = await searchElasticsearch(message);
 
-      // Use the prompt template to format the message
       const formattedPrompt = PROMPT_TEMPLATE
         .replace('{context}', context)
         .replace('{question}', message);
@@ -224,7 +285,6 @@ ai-chatbot/
       for await (const chunk of response.body) {
         if (chunk.chunk && chunk.chunk.bytes) {
           const decodedChunk = new TextDecoder().decode(chunk.chunk.bytes);
-          // console.log('Decoded chunk:', decodedChunk);
           try {
             const parsedChunk = JSON.parse(decodedChunk);
             if (parsedChunk.type === 'content_block_delta' && parsedChunk.delta && parsedChunk.delta.text) {
@@ -240,7 +300,6 @@ ai-chatbot/
       res.write(`data: [DONE]\n\n`);
       res.end();
 
-      // console.log('Full response:', fullResponse);
     } catch (error) {
       console.error('Error:', error);
       if (!res.headersSent) {
@@ -527,37 +586,99 @@ ai-chatbot/
   Here's a script to index documents (`indexDocuments.js`):
 
   ```javascript
+  require('dotenv').config();
   const client = require('./elasticsearchClient');
 
   // Load environment variables
-  const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base'; // Default to 'knowledge_base' if not set
+  const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base';
+  const ELASTICSEARCH_CONTENT_FIELD = process.env.ELASTICSEARCH_CONTENT_FIELD || 'content';
+  const ELASTICSEARCH_SEMANTIC_FIELD = process.env.ELASTICSEARCH_SEMANTIC_FIELD || 'semantic_content';
+  const INFERENCE_ID = process.env.ELASTICSEARCH_INFERENCE_ID || 'elser-sparse-embedding';
 
-  async function indexDocuments() {
-    try {
-      const documents = [
-        { id: 1, content: "Elasticsearch is a distributed search and analytics engine." },
-        { id: 2, content: "Retrieval Augmented Generation enhances AI responses with relevant context." },
-      ];
+  async function createOrUpdateIndex() {
+    const desiredMapping = {
+      properties: {
+        [ELASTICSEARCH_CONTENT_FIELD]: { 
+          type: "text"
+        },
+        [ELASTICSEARCH_SEMANTIC_FIELD]: {
+          type: "semantic_text",
+          inference_id: INFERENCE_ID,
+          model_settings: {
+            task_type: "sparse_embedding"
+          }
+        }
+      }
+    };
 
+    const indexExists = await client.indices.exists({ index: ELASTICSEARCH_INDEX });
+
+    if (!indexExists) {
       try {
         await client.indices.create({
-          index: ELASTICSEARCH_INDEX
+          index: ELASTICSEARCH_INDEX,
+          body: {
+            mappings: desiredMapping
+          }
         });
         console.log('Index created successfully');
       } catch (error) {
-        if (error.meta && error.meta.statusCode === 400 && error.body.error.type === 'resource_already_exists_exception') {
-          console.log('Index already exists');
-        } else {
-          console.error('Error creating index:', error);
-          return;
-        }
+        console.error('Error creating index:', error);
+        throw error;
       }
+    } else {
+      try {
+        const currentMapping = await client.indices.getMapping({ index: ELASTICSEARCH_INDEX });
+        const currentProperties = currentMapping[ELASTICSEARCH_INDEX].mappings.properties;
+
+        if (JSON.stringify(currentProperties) !== JSON.stringify(desiredMapping.properties)) {
+          console.log('Existing mapping differs from desired mapping. Creating a new index...');
+          const newIndexName = `${ELASTICSEARCH_INDEX}_${Date.now()}`;
+          await client.indices.create({
+            index: newIndexName,
+            body: {
+              mappings: desiredMapping
+            }
+          });
+          console.log(`New index ${newIndexName} created successfully`);
+          
+          // Here you would typically reindex data from the old index to the new one
+          // and update aliases if you're using them.
+          console.log('Remember to reindex your data to the new index and update any aliases!');
+          
+          // Update the ELASTICSEARCH_INDEX to use the new index name
+          process.env.ELASTICSEARCH_INDEX = newIndexName;
+        } else {
+          console.log('Existing mapping matches desired mapping. No changes needed.');
+        }
+      } catch (error) {
+        console.error('Error checking or updating index:', error);
+        throw error;
+      }
+    }
+  }
+
+  async function indexDocuments() {
+    try {
+      await createOrUpdateIndex();
+
+      const documents = [
+        { id: 1, content: "Elasticsearch is a distributed search and analytics engine." },
+        { id: 2, content: "Retrieval Augmented Generation enhances AI responses with relevant context." },
+        { id: 3, content: "Vector search enables semantic similarity comparisons in high-dimensional spaces." },
+        { id: 4, content: "Embeddings are dense vector representations of text or other data types." },
+        { id: 5, content: "Cosine similarity is a measure of similarity between two non-zero vectors." }
+      ];
 
       for (const doc of documents) {
         try {
           const result = await client.index({
-            index: ELASTICSEARCH_INDEX,
-            body: doc
+            index: process.env.ELASTICSEARCH_INDEX,
+            id: doc.id.toString(),
+            body: {
+              [ELASTICSEARCH_CONTENT_FIELD]: doc.content,
+              [ELASTICSEARCH_SEMANTIC_FIELD]: doc.content
+            }
           });
           console.log(`Indexed document ${doc.id}:`, result);
         } catch (error) {
@@ -575,11 +696,6 @@ ai-chatbot/
   }
 
   indexDocuments().catch(console.error);
-  ```
-
-  Run this script to index your documents:
-  ```bash
-  node indexDocuments.js
   ```
 
 12. Start the server:
