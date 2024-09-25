@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
+import TextareaAutosize from 'react-textarea-autosize';
 
 const Message = ({ markdown, isUser }) => (
   <div className={`message ${isUser ? 'user' : 'ai'}`}>
@@ -18,6 +19,13 @@ const ChatInterface = () => {
   const [isLoading, setIsLoading] = useState(false);
   const eventSourceRef = useRef(null);
   const latestMessageRef = useRef('');
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(scrollToBottom, [messages]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,15 +37,12 @@ const ChatInterface = () => {
     setIsLoading(true);
 
     try {
-      // Close any existing EventSource
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
 
-      // Create a new EventSource for this request
       eventSourceRef.current = new EventSource(`http://localhost:5000/api/chat?message=${encodeURIComponent(input)}`);
 
-      // Add an initial bot message that will be updated
       setMessages(prevMessages => [...prevMessages, { markdown: '', isUser: false }]);
       latestMessageRef.current = '';
 
@@ -90,22 +95,29 @@ const ChatInterface = () => {
 
   return (
     <div className="chat-interface">
-      <div className="messages">
-        {messages.map((message, index) => (
-          <Message key={index} markdown={message.markdown} isUser={message.isUser} />
-        ))}
-        {isLoading && <div className="loading">AI is typing...</div>}
+      <div className="messages-container">
+        <div className="messages">
+          {messages.map((message, index) => (
+            <Message key={index} markdown={message.markdown} isUser={message.isUser} />
+          ))}
+          {isLoading && <div className="message ai loading">AI is typing...</div>}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
-          disabled={isLoading}
-        />
-        <button type="submit" disabled={isLoading}>Send</button>
-      </form>
+      <div className="input-container">
+        <form onSubmit={handleSubmit} className="input-form">
+          <TextareaAutosize
+            minRows={2}
+            maxRows={6}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+            disabled={isLoading}
+            className="chat-input"
+          />
+          <button type="submit" disabled={isLoading}>Send</button>
+        </form>
+      </div>
     </div>
   );
 };

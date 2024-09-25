@@ -1,4 +1,4 @@
-# Creating a RAG AI Chatbot with React, Node.js, Vite, Amazon Bedrock (Claude 3.5 Sonnet), and Elasticsearch
+# Creating a RAG AI Chatbot with React, Node.js, Vite, Amazon Bedrock (Claude 3.5 Sonnet), and Elasticsearch using Semantic Search
 
 ## Directory Structure
 
@@ -41,7 +41,7 @@ ai-chatbot/
   ```bash
   cd client
   npm create vite@latest . -- --template react
-  npm install dompurify dotenv marked
+  npm install dompurify dotenv marked react-textarea-autosize
   ```
 
 3. Set up the server (Node.js):
@@ -334,6 +334,7 @@ ai-chatbot/
   import React, { useState, useEffect, useRef } from 'react';
   import DOMPurify from 'dompurify';
   import { marked } from 'marked';
+  import TextareaAutosize from 'react-textarea-autosize';
 
   const Message = ({ markdown, isUser }) => (
     <div className={`message ${isUser ? 'user' : 'ai'}`}>
@@ -351,6 +352,13 @@ ai-chatbot/
     const [isLoading, setIsLoading] = useState(false);
     const eventSourceRef = useRef(null);
     const latestMessageRef = useRef('');
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(scrollToBottom, [messages]);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
@@ -362,15 +370,12 @@ ai-chatbot/
       setIsLoading(true);
 
       try {
-        // Close any existing EventSource
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
         }
 
-        // Create a new EventSource for this request
         eventSourceRef.current = new EventSource(`http://localhost:5000/api/chat?message=${encodeURIComponent(input)}`);
 
-        // Add an initial bot message that will be updated
         setMessages(prevMessages => [...prevMessages, { markdown: '', isUser: false }]);
         latestMessageRef.current = '';
 
@@ -423,22 +428,29 @@ ai-chatbot/
 
     return (
       <div className="chat-interface">
-        <div className="messages">
-          {messages.map((message, index) => (
-            <Message key={index} markdown={message.markdown} isUser={message.isUser} />
-          ))}
-          {isLoading && <div className="loading">AI is typing...</div>}
+        <div className="messages-container">
+          <div className="messages">
+            {messages.map((message, index) => (
+              <Message key={index} markdown={message.markdown} isUser={message.isUser} />
+            ))}
+            {isLoading && <div className="message ai loading">AI is typing...</div>}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-        <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            disabled={isLoading}
-          />
-          <button type="submit" disabled={isLoading}>Send</button>
-        </form>
+        <div className="input-container">
+          <form onSubmit={handleSubmit} className="input-form">
+            <TextareaAutosize
+              minRows={2}
+              maxRows={6}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message..."
+              disabled={isLoading}
+              className="chat-input"
+            />
+            <button type="submit" disabled={isLoading}>Send</button>
+          </form>
+        </div>
       </div>
     );
   };
@@ -449,13 +461,17 @@ ai-chatbot/
   `client/src/app.jsx`:
 
   ```jsx
+  import React from 'react';
   import ChatInterface from './components/ChatInterface';
+  import './App.css';
 
   function App() {
     return (
       <div className="App">
         <h1>AI Chatbot</h1>
-        <ChatInterface />
+        <div className="chat-container">
+          <ChatInterface />
+        </div>
       </div>
     );
   }
@@ -481,89 +497,102 @@ ai-chatbot/
   `client/src/App.css`:
 
   ```css
-  #root {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 2rem;
+  html, body, #root, .App {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .App {
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  h1 {
     text-align: center;
+    margin-bottom: 20px;
   }
 
-  .logo {
-    height: 6em;
-    padding: 1.5em;
-    will-change: filter;
-    transition: filter 300ms;
-  }
-  .logo:hover {
-    filter: drop-shadow(0 0 2em #646cffaa);
-  }
-  .logo.react:hover {
-    filter: drop-shadow(0 0 2em #61dafbaa);
+  .chat-container {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 
-  @keyframes logo-spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
+  .chat-interface {
+    width: 80%;
+    height: 80vh;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  @media (prefers-reduced-motion: no-preference) {
-    a:nth-of-type(2) .logo {
-      animation: logo-spin infinite 20s linear;
-    }
+  .messages-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 20px;
   }
 
-  .card {
-    padding: 2em;
+  .input-container {
+    border-top: 1px solid #ccc;
+    padding: 10px;
   }
 
-  .read-the-docs {
-    color: #888;
+  .input-form {
+    display: flex;
+    gap: 10px;
+  }
+
+  .chat-input {
+    flex-grow: 1;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    resize: none;
+  }
+
+  button {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    background-color: #cccccc;
+  }
+
+  .message {
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 100%;
+  }
+
+  .message.user {
+    align-self: flex-end;
+    background-color: #007bff;
+    color: white;
   }
 
   .message.ai {
-    /* Styles for AI messages */
+    align-self: flex-start;
+    background-color: #f0f0f0;
+    color: black;
   }
 
-  .message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4, .message.ai h5, .message.ai h6 {
-    margin-top: 1em;
-    margin-bottom: 0.5em;
-  }
-
-  .message.ai p {
-    margin-bottom: 1em;
-  }
-
-  .message.ai ul, .message.ai ol {
-    margin-bottom: 1em;
-    padding-left: 2em;
-  }
-
-  .message.ai li {
-    margin-bottom: 0.5em;
-  }
-
-  .message.ai pre {
-    background-color: #f4f4f4;
-    padding: 1em;
-    border-radius: 4px;
-    overflow-x: auto;
-  }
-
-  .message.ai code {
-    background-color: #f4f4f4;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-  }
-
-  .message.ai blockquote {
-    border-left: 4px solid #ccc;
-    margin: 1em 0;
-    padding-left: 1em;
-    color: #666;
+  .loading {
+    font-style: italic;
+    color: #888;
   }
   ```
 
