@@ -6,7 +6,11 @@ const chatRouter = require('./routes/chat');
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173', // or wherever your React app is served from
+  methods: ['POST', 'GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 app.get('/', (req, res) => {

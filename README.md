@@ -1,6 +1,4 @@
-Here are step-by-step instructions to create a new AI chatbot using React, Node.js, Vite, Amazon Bedrock, and Claude 3.5 Sonnet:
-
-# Creating an AI Chatbot with React, Node.js, Vite, and Amazon Bedrock (Claude 3.5 Sonnet)
+# Creating a RAG AI Chatbot with React, Node.js, Vite, Amazon Bedrock (Claude 3.5 Sonnet), and Elasticsearch
 
 ## Directory Structure
 
@@ -20,7 +18,9 @@ ai-chatbot/
 │   ├── routes/
 │   │   └── chat.js
 │   ├── .env
-│   ├── package.json
+│   ├── elasticsearchClient.js
+│   ├── indexDocuments.js
+|   ├── package.json
 │   └── server.js
 └── README.md
 ```
@@ -40,7 +40,6 @@ ai-chatbot/
   ```bash
   cd client
   npm create vite@latest . -- --template react
-  npm install axios
   ```
 
 3. Set up the server (Node.js):
@@ -48,10 +47,10 @@ ai-chatbot/
   ```bash
   cd ../server
   npm init -y
-  npm install express cors dotenv @aws-sdk/client-bedrock-runtime
+  npm install express cors dotenv @aws-sdk/client-bedrock-runtime @elastic/elasticsearch
   ```
 
-4. Configure Amazon Bedrock:
+4. Configure Amazon Bedrock and Elasticsearch:
 
   - Sign up for an AWS account if you don't have one
   - Set up Amazon Bedrock and obtain the necessary API keys
@@ -61,50 +60,131 @@ ai-chatbot/
     AWS_ACCESS_KEY_ID=your_access_key
     AWS_SECRET_ACCESS_KEY=your_secret_key
     AWS_REGION=your_region
+    BEDROCK_MAX_TOKENS=500
+    BEDROCK_TEMPERATURE=0.7
+
+    ELASTICSEARCH_URL=https://your-elasticsearch-url
+    ELASTICSEARCH_API_KEY=your-api-key-here
+    ELASTICSEARCH_INDEX=knowledge_base
+
+    PROMPT_TEMPLATE="You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
     ```
 
 5. Create the server (`server/server.js`):
 
   ```javascript
-  const express = require("express");
-  const cors = require("cors");
-  const dotenv = require("dotenv");
-  const chatRouter = require("./routes/chat");
+  const express = require('express');
+  const cors = require('cors');
+  const dotenv = require('dotenv');
+  const chatRouter = require('./routes/chat');
 
   dotenv.config();
 
   const app = express();
-  app.use(cors());
+  app.use(cors({
+    origin: 'http://localhost:5173', // or wherever your React app is served from
+    methods: ['POST', 'GET', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
   app.use(express.json());
 
-  app.get("/", (req, res) => {
-    res.send("AI Chatbot Server is running");
-  });
+  app.get('/', (req, res) => {
+      res.send('AI Chatbot Server is running');
+    });
 
-  app.use("/api/chat", chatRouter);
+  app.use('/api/chat', chatRouter);
 
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   ```
 
-6. Create the chat route (`server/routes/chat.js`):
+6. Create the Elasticsearch client (`server/elasticsearchClient.js`):
+ 
+  ```javascript
+  const { Client } = require('@elastic/elasticsearch');
+  require('dotenv').config();
+
+  const client = new Client({
+    node: process.env.ELASTICSEARCH_URL,
+    auth: {
+      apiKey: process.env.ELASTICSEARCH_API_KEY
+    },
+    tls: {
+      rejectUnauthorized: false // Only use this for testing. In production, use proper SSL certificates.
+    }
+  });
+
+  // Test the connection
+  client.ping()
+    .then(() => console.log('Connected to Elasticsearch'))
+    .catch(error => console.error('Elasticsearch connection error:', error));
+
+  module.exports = client;
+  ```
+
+7. Create the chat route (`server/routes/chat.js`):
 
   ```javascript
-  const express = require("express");
-  const {
-    BedrockRuntimeClient,
-    InvokeModelCommand,
-  } = require("@aws-sdk/client-bedrock-runtime");
+  const express = require('express');
+  const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require("@aws-sdk/client-bedrock-runtime");
+  const elasticsearchClient = require('../elasticsearchClient');
 
   const router = express.Router();
 
-  const client = new BedrockRuntimeClient({
+  const bedrockClient = new BedrockRuntimeClient({
     region: process.env.AWS_REGION,
   });
 
-  router.post("/", async (req, res) => {
+  // Load environment variables
+  const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE;
+  const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500; // Default to 500 if not set
+  const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7; // Default to 0.7 if not set
+  const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base'; // Default to 'knowledge_base' if not set
+
+  async function searchElasticsearch(query) {
     try {
-      const { message } = req.body;
+      const result = await elasticsearchClient.search({
+        index: ELASTICSEARCH_INDEX,
+        body: {
+          query: {
+            match: {
+              content: query
+            }
+          }
+        }
+      });
+
+      console.log('Elasticsearch result:', JSON.stringify(result, null, 2));
+
+      if (result && result.hits && result.hits.hits) {
+        return result.hits.hits.map(hit => hit._source.content).join(' ');
+      } else {
+        console.log('No hits found in Elasticsearch result');
+        return '';
+      }
+    } catch (error) {
+      console.error('Elasticsearch error:', error);
+      return '';
+    }
+  }
+
+  router.get('/', async (req, res) => {
+    console.log('Received GET request to /api/chat');
+    const message = req.query.message;
+    console.log('Received message:', message);
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    try {
+      const context = await searchElasticsearch(message);
+
+      // Use the prompt template to format the message
+      const formattedPrompt = PROMPT_TEMPLATE
+        .replace('{context}', context)
+        .replace('{question}', message);
+      console.log('Formatted Prompt:', formattedPrompt);
 
       const params = {
         modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
@@ -112,75 +192,160 @@ ai-chatbot/
         accept: "application/json",
         body: JSON.stringify({
           anthropic_version: "bedrock-2023-05-31",
-          max_tokens: 1000,
+          max_tokens: MAX_TOKENS,
+          temperature: TEMPERATURE,
           messages: [
             {
               role: "user",
-              content: message,
-            },
-          ],
+              content: formattedPrompt
+            }
+          ]
         }),
       };
+      
+      console.log('Bedrock params:', JSON.stringify(params, null, 2));
+      
+      const command = new InvokeModelWithResponseStreamCommand(params);
+      const response = await bedrockClient.send(command);
 
-      const command = new InvokeModelCommand(params);
-      const response = await client.send(command);
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+      });
 
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      res.json({ reply: responseBody.content[0].text });
+      let fullResponse = '';
+
+      for await (const chunk of response.body) {
+        if (chunk.chunk && chunk.chunk.bytes) {
+          const decodedChunk = new TextDecoder().decode(chunk.chunk.bytes);
+          // console.log('Decoded chunk:', decodedChunk);
+          try {
+            const parsedChunk = JSON.parse(decodedChunk);
+            if (parsedChunk.type === 'content_block_delta' && parsedChunk.delta && parsedChunk.delta.text) {
+              fullResponse += parsedChunk.delta.text;
+              res.write(`data: ${JSON.stringify({ text: parsedChunk.delta.text })}\n\n`);
+            }
+          } catch (parseError) {
+            console.error('Error parsing chunk:', parseError);
+          }
+        }
+      }
+
+      res.write(`data: [DONE]\n\n`);
+      res.end();
+
+      // console.log('Full response:', fullResponse);
     } catch (error) {
-      console.error("Error:", error);
-      res
-        .status(500)
-        .json({ error: "An error occurred while processing your request." });
+      console.error('Error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'An error occurred while processing your request.' });
+      } else {
+        res.write(`data: ${JSON.stringify({ error: 'An error occurred while processing your request.' })}\n\n`);
+        res.end();
+      }
     }
   });
 
   module.exports = router;
   ```
 
-7. Create the React components:
+8. Create the React components:
 
   `client/src/components/Message.jsx`:
 
   ```jsx
   const Message = ({ text, isUser }) => (
-    <div className={`message ${isUser ? "user" : "bot"}`}>
+    <div className={`message ${isUser ? 'user' : 'bot'}`}>
       <p>{text}</p>
     </div>
   );
-
+  
   export default Message;
   ```
 
   `client/src/components/ChatInterface.jsx`:
 
   ```jsx
-  import { useState } from "react";
-  import axios from "axios";
-  import Message from "./Message";
+  import React, { useState, useEffect, useRef } from 'react';
+  import Message from './Message';
 
   const ChatInterface = () => {
     const [messages, setMessages] = useState([]);
-    const [input, setInput] = useState("");
+    const [input, setInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const eventSourceRef = useRef(null);
+    const latestMessageRef = useRef(null);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
-      if (!input.trim()) return;
+      if (!input.trim() || isLoading) return;
 
       const userMessage = { text: input, isUser: true };
-      setMessages([...messages, userMessage]);
-      setInput("");
+      setMessages(prevMessages => [...prevMessages, userMessage]);
+      setInput('');
+      setIsLoading(true);
 
       try {
-        const response = await axios.post("http://localhost:5000/api/chat", {
-          message: input,
-        });
-        const botMessage = { text: response.data.reply, isUser: false };
-        setMessages((prevMessages) => [...prevMessages, botMessage]);
+        // Close any existing EventSource
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+        }
+
+        // Create a new EventSource for this request
+        eventSourceRef.current = new EventSource(`http://localhost:5000/api/chat?message=${encodeURIComponent(input)}`);
+
+        // Add an initial bot message that will be updated
+        setMessages(prevMessages => [...prevMessages, { text: '', isUser: false }]);
+        latestMessageRef.current = '';
+
+        eventSourceRef.current.onmessage = (event) => {
+          if (event.data === '[DONE]') {
+            eventSourceRef.current.close();
+            setIsLoading(false);
+          } else {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.text) {
+                latestMessageRef.current += data.text;
+                setMessages(prevMessages => {
+                  const newMessages = [...prevMessages];
+                  newMessages[newMessages.length - 1] = { text: latestMessageRef.current, isUser: false };
+                  return newMessages;
+                });
+              } else if (data.error) {
+                setMessages(prevMessages => [...prevMessages, { text: data.error, isUser: false }]);
+                eventSourceRef.current.close();
+                setIsLoading(false);
+              }
+            } catch (error) {
+              console.error('Error parsing message:', error);
+            }
+          }
+        };
+
+        eventSourceRef.current.onerror = (error) => {
+          console.error('EventSource failed:', error);
+          eventSourceRef.current.close();
+          setIsLoading(false);
+          setMessages(prevMessages => [...prevMessages, { text: "An error occurred. Please try again.", isUser: false }]);
+        };
+
       } catch (error) {
-        console.error("Error:", error);
+        console.error('Error:', error);
+        setMessages(prevMessages => [...prevMessages, { text: "An error occurred. Please try again.", isUser: false }]);
+        setIsLoading(false);
       }
     };
+
+    useEffect(() => {
+      return () => {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+        }
+      };
+    }, []);
 
     return (
       <div className="chat-interface">
@@ -188,6 +353,7 @@ ai-chatbot/
           {messages.map((message, index) => (
             <Message key={index} text={message.text} isUser={message.isUser} />
           ))}
+          {isLoading && <div className="loading">AI is typing...</div>}
         </div>
         <form onSubmit={handleSubmit}>
           <input
@@ -195,8 +361,9 @@ ai-chatbot/
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
+            disabled={isLoading}
           />
-          <button type="submit">Send</button>
+          <button type="submit" disabled={isLoading}>Send</button>
         </form>
       </div>
     );
@@ -205,10 +372,10 @@ ai-chatbot/
   export default ChatInterface;
   ```
 
-8. Update `client/src/App.jsx`:
+  `client/src/app.jsx`:
 
   ```jsx
-  import ChatInterface from "./components/ChatInterface";
+  import ChatInterface from './components/ChatInterface';
 
   function App() {
     return (
@@ -222,36 +389,110 @@ ai-chatbot/
   export default App;
   ```
 
-9. Update `client/vite.config.js`
+  `client/src/main.jsx`:
+
+  ```jsx
+  import { StrictMode } from 'react'
+  import { createRoot } from 'react-dom/client'
+  import App from './App.jsx'
+  import './index.css'
+
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+  ```
+
+10. Update `client/vite.config.js`
 
   ```js
-  import { defineConfig } from "vite";
-  import react from "@vitejs/plugin-react";
+  import { defineConfig } from 'vite'
+  import react from '@vitejs/plugin-react'
 
   // https://vitejs.dev/config/
   export default defineConfig({
     plugins: [react()],
     server: {
-      host: true,
-    },
-  });
+      host: true
+    }
+  })
   ```
 
-10. Start the server:
+11. Index your documents (if not already done):
+  Here's a script to index documents (`indexDocuments.js`):
+
+  ```javascript
+  const client = require('./elasticsearchClient');
+
+  // Load environment variables
+  const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base'; // Default to 'knowledge_base' if not set
+
+  async function indexDocuments() {
+    try {
+      const documents = [
+        { id: 1, content: "Elasticsearch is a distributed search and analytics engine." },
+        { id: 2, content: "Retrieval Augmented Generation enhances AI responses with relevant context." },
+      ];
+
+      try {
+        await client.indices.create({
+          index: ELASTICSEARCH_INDEX
+        });
+        console.log('Index created successfully');
+      } catch (error) {
+        if (error.meta && error.meta.statusCode === 400 && error.body.error.type === 'resource_already_exists_exception') {
+          console.log('Index already exists');
+        } else {
+          console.error('Error creating index:', error);
+          return;
+        }
+      }
+
+      for (const doc of documents) {
+        try {
+          const result = await client.index({
+            index: ELASTICSEARCH_INDEX,
+            body: doc
+          });
+          console.log(`Indexed document ${doc.id}:`, result);
+        } catch (error) {
+          console.error(`Error indexing document ${doc.id}:`, error);
+          if (error.meta && error.meta.body) {
+            console.error('Error details:', error.meta.body.error);
+          }
+        }
+      }
+
+      console.log('Indexing complete');
+    } catch (error) {
+      console.error('Error in indexing process:', error);
+    }
+  }
+
+  indexDocuments().catch(console.error);
+  ```
+
+  Run this script to index your documents:
+  ```bash
+  node indexDocuments.js
+  ```
+
+12. Start the server:
 
   ```bash
   cd server
   node server.js
   ```
 
-11. Start the client:
+13. Start the client:
 
   ```bash
   cd client
   npm run dev
   ```
 
-12. Open your browser and navigate to `http://localhost:5173` to use your AI chatbot.
+14. Open your browser and navigate to `http://localhost:5173` to use your AI chatbot.
 
 Remember to handle errors, add proper styling, and implement additional features as needed for a production-ready application.
 
