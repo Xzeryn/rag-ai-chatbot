@@ -9,6 +9,7 @@ ai-chatbot/
 │   │   ├── components/
 │   │   │   ├── ChatInterface.jsx
 │   │   │   └── Message.jsx
+│   │   ├── App.css
 │   │   ├── App.jsx
 │   │   └── main.jsx
 │   ├── index.html
@@ -40,6 +41,7 @@ ai-chatbot/
   ```bash
   cd client
   npm create vite@latest . -- --template react
+  npm install dompurify marked
   ```
 
 3. Set up the server (Node.js):
@@ -47,7 +49,7 @@ ai-chatbot/
   ```bash
   cd ../server
   npm init -y
-  npm install express cors dotenv @aws-sdk/client-bedrock-runtime @elastic/elasticsearch
+  npm install express cors dotenv marked @aws-sdk/client-bedrock-runtime @elastic/elasticsearch
   ```
 
 4. Configure Amazon Bedrock and Elasticsearch:
@@ -67,7 +69,7 @@ ai-chatbot/
     ELASTICSEARCH_API_KEY=your-api-key-here
     ELASTICSEARCH_INDEX=knowledge_base
 
-    PROMPT_TEMPLATE="You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
+    PROMPT_TEMPLATE="You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
     ```
 
 5. Create the server (`server/server.js`):
@@ -128,6 +130,7 @@ ai-chatbot/
   const express = require('express');
   const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require("@aws-sdk/client-bedrock-runtime");
   const elasticsearchClient = require('../elasticsearchClient');
+  const { marked } = require('marked');
 
   const router = express.Router();
 
@@ -136,7 +139,7 @@ ai-chatbot/
   });
 
   // Load environment variables
-  const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE;
+  const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE || "You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
   const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500; // Default to 500 if not set
   const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7; // Default to 0.7 if not set
   const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base'; // Default to 'knowledge_base' if not set
@@ -269,20 +272,31 @@ ai-chatbot/
 
   ```jsx
   import React, { useState, useEffect, useRef } from 'react';
-  import Message from './Message';
+  import DOMPurify from 'dompurify';
+  import { marked } from 'marked';
+
+  const Message = ({ markdown, isUser }) => (
+    <div className={`message ${isUser ? 'user' : 'ai'}`}>
+      {isUser ? (
+        <p>{markdown}</p>
+      ) : (
+        <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(markdown)) }} />
+      )}
+    </div>
+  );
 
   const ChatInterface = () => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const eventSourceRef = useRef(null);
-    const latestMessageRef = useRef(null);
+    const latestMessageRef = useRef('');
 
     const handleSubmit = async (e) => {
       e.preventDefault();
       if (!input.trim() || isLoading) return;
 
-      const userMessage = { text: input, isUser: true };
+      const userMessage = { markdown: input, isUser: true };
       setMessages(prevMessages => [...prevMessages, userMessage]);
       setInput('');
       setIsLoading(true);
@@ -297,7 +311,7 @@ ai-chatbot/
         eventSourceRef.current = new EventSource(`http://localhost:5000/api/chat?message=${encodeURIComponent(input)}`);
 
         // Add an initial bot message that will be updated
-        setMessages(prevMessages => [...prevMessages, { text: '', isUser: false }]);
+        setMessages(prevMessages => [...prevMessages, { markdown: '', isUser: false }]);
         latestMessageRef.current = '';
 
         eventSourceRef.current.onmessage = (event) => {
@@ -311,11 +325,11 @@ ai-chatbot/
                 latestMessageRef.current += data.text;
                 setMessages(prevMessages => {
                   const newMessages = [...prevMessages];
-                  newMessages[newMessages.length - 1] = { text: latestMessageRef.current, isUser: false };
+                  newMessages[newMessages.length - 1] = { markdown: latestMessageRef.current, isUser: false };
                   return newMessages;
                 });
               } else if (data.error) {
-                setMessages(prevMessages => [...prevMessages, { text: data.error, isUser: false }]);
+                setMessages(prevMessages => [...prevMessages, { markdown: data.error, isUser: false }]);
                 eventSourceRef.current.close();
                 setIsLoading(false);
               }
@@ -329,12 +343,12 @@ ai-chatbot/
           console.error('EventSource failed:', error);
           eventSourceRef.current.close();
           setIsLoading(false);
-          setMessages(prevMessages => [...prevMessages, { text: "An error occurred. Please try again.", isUser: false }]);
+          setMessages(prevMessages => [...prevMessages, { markdown: "An error occurred. Please try again.", isUser: false }]);
         };
 
       } catch (error) {
         console.error('Error:', error);
-        setMessages(prevMessages => [...prevMessages, { text: "An error occurred. Please try again.", isUser: false }]);
+        setMessages(prevMessages => [...prevMessages, { markdown: "An error occurred. Please try again.", isUser: false }]);
         setIsLoading(false);
       }
     };
@@ -351,7 +365,7 @@ ai-chatbot/
       <div className="chat-interface">
         <div className="messages">
           {messages.map((message, index) => (
-            <Message key={index} text={message.text} isUser={message.isUser} />
+            <Message key={index} markdown={message.markdown} isUser={message.isUser} />
           ))}
           {isLoading && <div className="loading">AI is typing...</div>}
         </div>
@@ -402,6 +416,95 @@ ai-chatbot/
       <App />
     </StrictMode>,
   )
+  ```
+
+  `client/src/App.css`:
+
+  ```css
+  #root {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  .logo {
+    height: 6em;
+    padding: 1.5em;
+    will-change: filter;
+    transition: filter 300ms;
+  }
+  .logo:hover {
+    filter: drop-shadow(0 0 2em #646cffaa);
+  }
+  .logo.react:hover {
+    filter: drop-shadow(0 0 2em #61dafbaa);
+  }
+
+  @keyframes logo-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a:nth-of-type(2) .logo {
+      animation: logo-spin infinite 20s linear;
+    }
+  }
+
+  .card {
+    padding: 2em;
+  }
+
+  .read-the-docs {
+    color: #888;
+  }
+
+  .message.ai {
+    /* Styles for AI messages */
+  }
+
+  .message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4, .message.ai h5, .message.ai h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+  }
+
+  .message.ai p {
+    margin-bottom: 1em;
+  }
+
+  .message.ai ul, .message.ai ol {
+    margin-bottom: 1em;
+    padding-left: 2em;
+  }
+
+  .message.ai li {
+    margin-bottom: 0.5em;
+  }
+
+  .message.ai pre {
+    background-color: #f4f4f4;
+    padding: 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+  }
+
+  .message.ai code {
+    background-color: #f4f4f4;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+  }
+
+  .message.ai blockquote {
+    border-left: 4px solid #ccc;
+    margin: 1em 0;
+    padding-left: 1em;
+    color: #666;
+  }
   ```
 
 10. Update `client/vite.config.js`

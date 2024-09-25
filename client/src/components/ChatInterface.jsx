@@ -1,18 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Message from './Message';
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
+
+const Message = ({ markdown, isUser }) => (
+  <div className={`message ${isUser ? 'user' : 'ai'}`}>
+    {isUser ? (
+      <p>{markdown}</p>
+    ) : (
+      <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(markdown)) }} />
+    )}
+  </div>
+);
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const eventSourceRef = useRef(null);
-  const latestMessageRef = useRef(null);
+  const latestMessageRef = useRef('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = { text: input, isUser: true };
+    const userMessage = { markdown: input, isUser: true };
     setMessages(prevMessages => [...prevMessages, userMessage]);
     setInput('');
     setIsLoading(true);
@@ -27,7 +38,7 @@ const ChatInterface = () => {
       eventSourceRef.current = new EventSource(`http://localhost:5000/api/chat?message=${encodeURIComponent(input)}`);
 
       // Add an initial bot message that will be updated
-      setMessages(prevMessages => [...prevMessages, { text: '', isUser: false }]);
+      setMessages(prevMessages => [...prevMessages, { markdown: '', isUser: false }]);
       latestMessageRef.current = '';
 
       eventSourceRef.current.onmessage = (event) => {
@@ -41,11 +52,11 @@ const ChatInterface = () => {
               latestMessageRef.current += data.text;
               setMessages(prevMessages => {
                 const newMessages = [...prevMessages];
-                newMessages[newMessages.length - 1] = { text: latestMessageRef.current, isUser: false };
+                newMessages[newMessages.length - 1] = { markdown: latestMessageRef.current, isUser: false };
                 return newMessages;
               });
             } else if (data.error) {
-              setMessages(prevMessages => [...prevMessages, { text: data.error, isUser: false }]);
+              setMessages(prevMessages => [...prevMessages, { markdown: data.error, isUser: false }]);
               eventSourceRef.current.close();
               setIsLoading(false);
             }
@@ -59,12 +70,12 @@ const ChatInterface = () => {
         console.error('EventSource failed:', error);
         eventSourceRef.current.close();
         setIsLoading(false);
-        setMessages(prevMessages => [...prevMessages, { text: "An error occurred. Please try again.", isUser: false }]);
+        setMessages(prevMessages => [...prevMessages, { markdown: "An error occurred. Please try again.", isUser: false }]);
       };
 
     } catch (error) {
       console.error('Error:', error);
-      setMessages(prevMessages => [...prevMessages, { text: "An error occurred. Please try again.", isUser: false }]);
+      setMessages(prevMessages => [...prevMessages, { markdown: "An error occurred. Please try again.", isUser: false }]);
       setIsLoading(false);
     }
   };
@@ -81,7 +92,7 @@ const ChatInterface = () => {
     <div className="chat-interface">
       <div className="messages">
         {messages.map((message, index) => (
-          <Message key={index} text={message.text} isUser={message.isUser} />
+          <Message key={index} markdown={message.markdown} isUser={message.isUser} />
         ))}
         {isLoading && <div className="loading">AI is typing...</div>}
       </div>

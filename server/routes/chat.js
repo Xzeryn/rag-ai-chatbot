@@ -1,6 +1,7 @@
 const express = require('express');
 const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require("@aws-sdk/client-bedrock-runtime");
 const elasticsearchClient = require('../elasticsearchClient');
+const { marked } = require('marked');
 
 const router = express.Router();
 
@@ -9,7 +10,7 @@ const bedrockClient = new BedrockRuntimeClient({
 });
 
 // Load environment variables
-const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE;
+const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE || "You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
 const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500; // Default to 500 if not set
 const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7; // Default to 0.7 if not set
 const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base'; // Default to 'knowledge_base' if not set

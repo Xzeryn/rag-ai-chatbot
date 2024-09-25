@@ -40,3 +40,45 @@
 .read-the-docs {
   color: #888;
 }
+
+.message.ai {
+  /* Styles for AI messages */
+}
+
+.message.ai h1, .message.ai h2, .message.ai h3, .message.ai h4, .message.ai h5, .message.ai h6 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+
+.message.ai p {
+  margin-bottom: 1em;
+}
+
+.message.ai ul, .message.ai ol {
+  margin-bottom: 1em;
+  padding-left: 2em;
+}
+
+.message.ai li {
+  margin-bottom: 0.5em;
+}
+
+.message.ai pre {
+  background-color: #f4f4f4;
+  padding: 1em;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.message.ai code {
+  background-color: #f4f4f4;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+.message.ai blockquote {
+  border-left: 4px solid #ccc;
+  margin: 1em 0;
+  padding-left: 1em;
+  color: #666;
+}
