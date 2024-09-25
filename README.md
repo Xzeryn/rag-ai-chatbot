@@ -56,6 +56,7 @@ ai-chatbot/
 
   - Sign up for an AWS account if you don't have one
   - Set up Amazon Bedrock and obtain the necessary API keys
+  - Set up an Elasticsearch cluster and obtain the necessary API keys
   - Create a `.env` file in the `server` directory:
 
     ```
