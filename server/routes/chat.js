@@ -28,6 +28,7 @@ async function searchElasticsearch(query) {
       }
     });
 
+    console.log('Elasticsearch index:', ELASTICSEARCH_INDEX);
     console.log('Elasticsearch result:', JSON.stringify(result, null, 2));
 
     if (result && result.hits && result.hits.hits) {
