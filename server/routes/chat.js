@@ -11,6 +11,7 @@ const bedrockClient = new BedrockRuntimeClient({
 
 // Load environment variables
 const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE || "You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
+const MODEL_ID = process.env.MODEL_ID || 'anthropic.claude-3-sonnet-20240229-v1:0'
 const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500;
 const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7;
 const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base';
@@ -122,11 +123,11 @@ router.get('/', async (req, res) => {
     console.log('Formatted Prompt:', formattedPrompt);
 
     const params = {
-      modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+      modelId: MODEL_ID,
       contentType: "application/json",
       accept: "application/json",
       body: JSON.stringify({
-        anthropic_version: "bedrock-2023-05-31",
+        //anthropic_version: "bedrock-2023-05-31",
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
         messages: [
