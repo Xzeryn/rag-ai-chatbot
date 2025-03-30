@@ -128,7 +128,7 @@ router.get('/', async (req, res) => {
       contentType: "application/json",
       accept: "application/json",
       body: JSON.stringify({
-        //anthropic_version: "bedrock-2023-05-31",
+        anthropic_version: "bedrock-2023-05-31",
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
         messages: [

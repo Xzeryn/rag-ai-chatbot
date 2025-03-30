@@ -41,7 +41,7 @@ ai-chatbot/
   ```bash
   cd client
   npm create vite@latest . -- --template react
-  npm install dompurify dotenv marked react-textarea-autosize
+  npm install dompurify dotenv marked react-textarea-autosize rollup
   ```
 
 3. Set up the server (Node.js):

@@ -8,7 +8,7 @@ services:
       restart: unless-stopped
       volumes:
         # Mount the path from the host machine, not the container
-        - ${PROJECT_PATH}/ai-chatbot/server:/app
+        - ${PROJECT_PATH}/server:/app
       ports:
         - ${SERVER_PORT}:5000
       command: >
@@ -23,7 +23,7 @@ services:
       restart: unless-stopped
       volumes:
         # Mount the path from the host machine, not the container
-        - ${PROJECT_PATH}/ai-chatbot/client:/app
+        - ${PROJECT_PATH}/client:/app
       ports:
         - ${VITE_PORT}:5173
       command: >
