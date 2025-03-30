@@ -17,6 +17,7 @@ const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7;
 const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base';
 const ELASTICSEARCH_CONTENT_FIELD = process.env.ELASTICSEARCH_CONTENT_FIELD || 'content';
 const ELASTICSEARCH_SEMANTIC_FIELD = process.env.ELASTICSEARCH_SEMANTIC_FIELD || 'semantic_content';
+const ELASTICSEARCH_ELSER_MODEL_ID = process.env.ELASTICSEARCH_ELSER_MODEL_ID || '.elser_model_1';
 
 // Diagnostic function to check Elasticsearch setup
 async function checkElasticsearchSetup() {
@@ -41,7 +42,7 @@ async function checkElasticsearchSetup() {
 
     // Check ELSER model status
     try {
-      const modelInfo = await elasticsearchClient.ml.getTrainedModels({ model_id: ".elser_model_1" });
+      const modelInfo = await elasticsearchClient.ml.getTrainedModels({ model_id: ELASTICSEARCH_ELSER_MODEL_ID });
       console.log('ELSER model info:', JSON.stringify(modelInfo, null, 2));
     } catch (modelError) {
       console.error('Error checking ELSER model:', modelError);
