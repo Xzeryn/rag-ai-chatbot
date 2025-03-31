@@ -27,13 +27,17 @@ async function checkElasticsearchSetup() {
 
     if (indexExists) {
       const mapping = await elasticsearchClient.indices.getMapping({ index: ELASTICSEARCH_INDEX });
-      console.log('Index mapping:', JSON.stringify(mapping, null, 2));
+      console.log('Mapping exists:', !!mapping);
+      console.log('Mapping has content:', mapping && Object.keys(mapping).length > 0);
+      // console.log('Index mapping:', JSON.stringify(mapping, null, 2));
 
       const sampleDoc = await elasticsearchClient.search({
         index: ELASTICSEARCH_INDEX,
         body: { query: { match_all: {} }, size: 1 }
       });
-      console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
+      console.log('SampleDoc exists:', !!sampleDoc);
+      console.log('SampleDoc has content:', sampleDoc && sampleDoc.hits && sampleDoc.hits.hits && sampleDoc.hits.hits.length > 0);
+      // console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
     }
 
     // Check Elasticsearch version
@@ -95,7 +99,7 @@ async function searchElasticsearch(query) {
       // Log each hit's content for inspection
       console.log('Elasticsearch hits details:');
       result.hits.hits.forEach((hit, index) => {
-        console.log(`Hit ${index + 1} _source:`, JSON.stringify(hit._source, null, 2));
+        // console.log(`Hit ${index + 1} _source:`, JSON.stringify(hit._source, null, 2));
         
         // Get the content field, handling potential nested fields
         const contentValue = getNestedProperty(hit._source, ELASTICSEARCH_CONTENT_FIELD);
@@ -103,9 +107,20 @@ async function searchElasticsearch(query) {
           contentValue || 'FIELD NOT FOUND');
       });
       
+      // Format each document as a JSON string with its metadata
       const contextString = result.hits.hits
-        .map(hit => getNestedProperty(hit._source, ELASTICSEARCH_CONTENT_FIELD))
-        .filter(Boolean)  // Filter out undefined/null values
+        .map(hit => {
+          // Create an object with document metadata and source
+          const documentWithMetadata = {
+            _id: hit._id,
+            _score: hit._score,
+            _index: hit._index,
+            data: hit._source
+          };
+          
+          // Format as a markdown code block with JSON
+          return `\`\`\`json\n${JSON.stringify(documentWithMetadata, null, 2)}\n\`\`\``;
+        })
         .join('\n\n');
         
       return contextString;
@@ -165,16 +180,16 @@ router.get('/', async (req, res) => {
     
     // Inspect the context character by character if it's not empty but not displaying properly
     if (context && context.length > 0) {
-      console.log('Context character inspection:');
-      const charArray = Array.from(context).map((char, index) => {
-        return {
-          index,
-          char,
-          code: char.charCodeAt(0),
-          visible: char.trim() !== ''
-        };
-      });
-      console.log(JSON.stringify(charArray, null, 2));
+      // console.log('Context character inspection:');
+      // const charArray = Array.from(context).map((char, index) => {
+      //   return {
+      //     index,
+      //     char,
+      //     code: char.charCodeAt(0),
+      //     visible: char.trim() !== ''
+      //   };
+      // });
+      // console.log(JSON.stringify(charArray, null, 2));
       
       // Check if the context contains only whitespace characters
       if (context.trim() === '') {
