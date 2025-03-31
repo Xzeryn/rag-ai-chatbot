@@ -171,12 +171,12 @@ router.get('/', async (req, res) => {
     const context = await searchElasticsearch(message);
     
     // Enhanced context debugging
-    console.log('Context retrieved from Elasticsearch:');
-    console.log('-------------------------------------');
-    console.log(context || 'No context data found');
-    console.log('-------------------------------------');
-    console.log('Context type:', typeof context);
-    console.log('Context length:', context ? context.length : 0, 'characters');
+    // console.log('Context retrieved from Elasticsearch:');
+    // console.log('-------------------------------------');
+    // console.log(context || 'No context data found');
+    // console.log('-------------------------------------');
+    // console.log('Context type:', typeof context);
+    // console.log('Context length:', context ? context.length : 0, 'characters');
     
     // Inspect the context character by character if it's not empty but not displaying properly
     if (context && context.length > 0) {
@@ -200,7 +200,7 @@ router.get('/', async (req, res) => {
     const formattedPrompt = PROMPT_TEMPLATE
       .replace('{context}', context)
       .replace('{question}', message);
-    console.log('Formatted Prompt:', formattedPrompt);
+    // console.log('Formatted Prompt:', formattedPrompt);
 
     const params = {
       modelId: MODEL_ID,
