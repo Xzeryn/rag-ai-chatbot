@@ -92,7 +92,20 @@ async function searchElasticsearch(query) {
     console.log('Elasticsearch result hits:', result.hits.total.value);
 
     if (result.hits && result.hits.hits && result.hits.hits.length > 0) {
-      return result.hits.hits.map(hit => hit._source[ELASTICSEARCH_CONTENT_FIELD]).join('\n\n');
+      // Log each hit's content for inspection
+      console.log('Elasticsearch hits details:');
+      result.hits.hits.forEach((hit, index) => {
+        console.log(`Hit ${index + 1} _source:`, JSON.stringify(hit._source, null, 2));
+        console.log(`Hit ${index + 1} content field (${ELASTICSEARCH_CONTENT_FIELD}):`, 
+          hit._source[ELASTICSEARCH_CONTENT_FIELD] || 'FIELD NOT FOUND');
+      });
+      
+      const contextString = result.hits.hits
+        .map(hit => hit._source[ELASTICSEARCH_CONTENT_FIELD])
+        .filter(Boolean)  // Filter out undefined/null values
+        .join('\n\n');
+        
+      return contextString;
     } else {
       console.log('No hits found in Elasticsearch result');
       return '';
@@ -117,6 +130,33 @@ router.get('/', async (req, res) => {
 
   try {
     const context = await searchElasticsearch(message);
+    
+    // Enhanced context debugging
+    console.log('Context retrieved from Elasticsearch:');
+    console.log('-------------------------------------');
+    console.log(context || 'No context data found');
+    console.log('-------------------------------------');
+    console.log('Context type:', typeof context);
+    console.log('Context length:', context ? context.length : 0, 'characters');
+    
+    // Inspect the context character by character if it's not empty but not displaying properly
+    if (context && context.length > 0) {
+      console.log('Context character inspection:');
+      const charArray = Array.from(context).map((char, index) => {
+        return {
+          index,
+          char,
+          code: char.charCodeAt(0),
+          visible: char.trim() !== ''
+        };
+      });
+      console.log(JSON.stringify(charArray, null, 2));
+      
+      // Check if the context contains only whitespace characters
+      if (context.trim() === '') {
+        console.log('Warning: Context contains only whitespace characters');
+      }
+    }
 
     const formattedPrompt = PROMPT_TEMPLATE
       .replace('{context}', context)
