@@ -96,12 +96,15 @@ async function searchElasticsearch(query) {
       console.log('Elasticsearch hits details:');
       result.hits.hits.forEach((hit, index) => {
         console.log(`Hit ${index + 1} _source:`, JSON.stringify(hit._source, null, 2));
+        
+        // Get the content field, handling potential nested fields
+        const contentValue = getNestedProperty(hit._source, ELASTICSEARCH_CONTENT_FIELD);
         console.log(`Hit ${index + 1} content field (${ELASTICSEARCH_CONTENT_FIELD}):`, 
-          hit._source[ELASTICSEARCH_CONTENT_FIELD] || 'FIELD NOT FOUND');
+          contentValue || 'FIELD NOT FOUND');
       });
       
       const contextString = result.hits.hits
-        .map(hit => hit._source[ELASTICSEARCH_CONTENT_FIELD])
+        .map(hit => getNestedProperty(hit._source, ELASTICSEARCH_CONTENT_FIELD))
         .filter(Boolean)  // Filter out undefined/null values
         .join('\n\n');
         
@@ -117,6 +120,27 @@ async function searchElasticsearch(query) {
     }
     return '';
   }
+}
+
+// Helper function to get nested properties using dot notation
+function getNestedProperty(obj, path) {
+  // Handle direct property access first
+  if (obj[path] !== undefined) {
+    return obj[path];
+  }
+  
+  // Handle nested properties
+  const parts = path.split('.');
+  let current = obj;
+  
+  for (let i = 0; i < parts.length; i++) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    current = current[parts[i]];
+  }
+  
+  return current;
 }
 
 router.get('/', async (req, res) => {
