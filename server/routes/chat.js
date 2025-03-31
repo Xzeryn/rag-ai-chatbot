@@ -27,13 +27,17 @@ async function checkElasticsearchSetup() {
 
     if (indexExists) {
       const mapping = await elasticsearchClient.indices.getMapping({ index: ELASTICSEARCH_INDEX });
-      console.log('Index mapping:', JSON.stringify(mapping, null, 2));
+      console.log('Mapping exists:', !!mapping);
+      console.log('Mapping has content:', mapping && Object.keys(mapping).length > 0);
+      // console.log('Index mapping:', JSON.stringify(mapping, null, 2));
 
       const sampleDoc = await elasticsearchClient.search({
         index: ELASTICSEARCH_INDEX,
         body: { query: { match_all: {} }, size: 1 }
       });
-      console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
+      console.log('SampleDoc exists:', !!sampleDoc);
+      console.log('SampleDoc has content:', sampleDoc && sampleDoc.hits && sampleDoc.hits.hits && sampleDoc.hits.hits.length > 0);
+      // console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
     }
 
     // Check Elasticsearch version
@@ -92,7 +96,34 @@ async function searchElasticsearch(query) {
     console.log('Elasticsearch result hits:', result.hits.total.value);
 
     if (result.hits && result.hits.hits && result.hits.hits.length > 0) {
-      return result.hits.hits.map(hit => hit._source[ELASTICSEARCH_CONTENT_FIELD]).join('\n\n');
+      // Log each hit's content for inspection
+      console.log('Elasticsearch hits details:');
+      result.hits.hits.forEach((hit, index) => {
+        // console.log(`Hit ${index + 1} _source:`, JSON.stringify(hit._source, null, 2));
+        
+        // Get the content field, handling potential nested fields
+        const contentValue = getNestedProperty(hit._source, ELASTICSEARCH_CONTENT_FIELD);
+        console.log(`Hit ${index + 1} content field (${ELASTICSEARCH_CONTENT_FIELD}):`, 
+          contentValue || 'FIELD NOT FOUND');
+      });
+      
+      // Format each document as a JSON string with its metadata
+      const contextString = result.hits.hits
+        .map(hit => {
+          // Create an object with document metadata and source
+          const documentWithMetadata = {
+            _id: hit._id,
+            _score: hit._score,
+            _index: hit._index,
+            data: hit._source
+          };
+          
+          // Format as a markdown code block with JSON
+          return `\`\`\`json\n${JSON.stringify(documentWithMetadata, null, 2)}\n\`\`\``;
+        })
+        .join('\n\n');
+        
+      return contextString;
     } else {
       console.log('No hits found in Elasticsearch result');
       return '';
@@ -106,6 +137,27 @@ async function searchElasticsearch(query) {
   }
 }
 
+// Helper function to get nested properties using dot notation
+function getNestedProperty(obj, path) {
+  // Handle direct property access first
+  if (obj[path] !== undefined) {
+    return obj[path];
+  }
+  
+  // Handle nested properties
+  const parts = path.split('.');
+  let current = obj;
+  
+  for (let i = 0; i < parts.length; i++) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    current = current[parts[i]];
+  }
+  
+  return current;
+}
+
 router.get('/', async (req, res) => {
   console.log('Received GET request to /api/chat');
   const message = req.query.message;
@@ -117,6 +169,33 @@ router.get('/', async (req, res) => {
 
   try {
     const context = await searchElasticsearch(message);
+    
+    // Enhanced context debugging
+    console.log('Context retrieved from Elasticsearch:');
+    console.log('-------------------------------------');
+    console.log(context || 'No context data found');
+    console.log('-------------------------------------');
+    console.log('Context type:', typeof context);
+    console.log('Context length:', context ? context.length : 0, 'characters');
+    
+    // Inspect the context character by character if it's not empty but not displaying properly
+    if (context && context.length > 0) {
+      // console.log('Context character inspection:');
+      // const charArray = Array.from(context).map((char, index) => {
+      //   return {
+      //     index,
+      //     char,
+      //     code: char.charCodeAt(0),
+      //     visible: char.trim() !== ''
+      //   };
+      // });
+      // console.log(JSON.stringify(charArray, null, 2));
+      
+      // Check if the context contains only whitespace characters
+      if (context.trim() === '') {
+        console.log('Warning: Context contains only whitespace characters');
+      }
+    }
 
     const formattedPrompt = PROMPT_TEMPLATE
       .replace('{context}', context)
