@@ -18,6 +18,9 @@ const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base';
 const ELASTICSEARCH_CONTENT_FIELD = process.env.ELASTICSEARCH_CONTENT_FIELD || 'content';
 const ELASTICSEARCH_SEMANTIC_FIELD = process.env.ELASTICSEARCH_SEMANTIC_FIELD || 'semantic_content';
 const ELASTICSEARCH_ELSER_MODEL_ID = process.env.ELASTICSEARCH_ELSER_MODEL_ID || '.elser_model_1';
+const ELASTICSEARCH_TEST_QUERY = process.env.ELASTICSEARCH_TEST_QUERY || 'What is Elasticsearch?';
+const ELASTICSEARCH_KEYWORD_MIN_SCORE = parseFloat(process.env.ELASTICSEARCH_KEYWORD_MIN_SCORE) || 0.5;
+const ELASTICSEARCH_SEMANTIC_MIN_SCORE = parseFloat(process.env.ELASTICSEARCH_SEMANTIC_MIN_SCORE) || 0.5;
 
 // Diagnostic function to check Elasticsearch setup
 async function checkElasticsearchSetup() {
@@ -54,9 +57,12 @@ async function checkElasticsearchSetup() {
 
     // Perform a test search
     console.log('Performing test search...');
-    const testQuery = 'elasticsearch';
-    const testResult = await searchElasticsearch(testQuery);
-    console.log('Test search result:', testResult);
+    const testResult = await searchElasticsearch(ELASTICSEARCH_TEST_QUERY);
+    console.log('Test search result:', testResult ? 'SUCCESS ✅' : 'FAIL ❌');
+    // Optional: Log the length of the result if successful
+    if (testResult) {
+      console.log(`Found ${testResult.length} characters of context data`);
+    }
 
   } catch (error) {
     console.error('Error checking Elasticsearch setup:', error);
@@ -72,12 +78,25 @@ async function searchElasticsearch(query) {
       query: {
         bool: {
           should: [
-            { match: { [ELASTICSEARCH_CONTENT_FIELD]: query } },
             {
-              semantic: {
-                field: ELASTICSEARCH_SEMANTIC_FIELD,
-                query: query,
-                boost: 2  // Give more weight to semantic search
+              function_score: {
+                query: {
+                  match: {
+                    [ELASTICSEARCH_CONTENT_FIELD]: query
+                  }
+                },
+                min_score: ELASTICSEARCH_KEYWORD_MIN_SCORE
+              }
+            },
+            {
+              function_score: {
+                query: {
+                  semantic: {
+                    field: ELASTICSEARCH_SEMANTIC_FIELD,
+                    query: query
+                  }
+                },
+                min_score: ELASTICSEARCH_SEMANTIC_MIN_SCORE
               }
             }
           ]
