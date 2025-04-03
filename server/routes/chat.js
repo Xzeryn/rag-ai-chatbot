@@ -57,7 +57,6 @@ async function checkElasticsearchSetup() {
 
     // Perform a test search
     console.log('Performing test search...');
-    // const testQuery = 'elasticsearch';
     const testResult = await searchElasticsearch(ELASTICSEARCH_TEST_QUERY);
     console.log('Test search result:', testResult ? 'SUCCESS ✅' : 'FAIL ❌');
     // Optional: Log the length of the result if successful
