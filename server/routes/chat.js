@@ -57,10 +57,6 @@ async function checkElasticsearchSetup() {
 
     // Perform a test search
     console.log('Performing test search...');
-<<<<<<< HEAD
-=======
-    // const testQuery = 'elasticsearch';
->>>>>>> 949240d (Add environment variables for Elasticsearch test query and scoring thresholds)
     const testResult = await searchElasticsearch(ELASTICSEARCH_TEST_QUERY);
     console.log('Test search result:', testResult ? 'SUCCESS ✅' : 'FAIL ❌');
     // Optional: Log the length of the result if successful
