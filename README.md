@@ -63,12 +63,20 @@ ai-chatbot/
     AWS_ACCESS_KEY_ID=your_access_key
     AWS_SECRET_ACCESS_KEY=your_secret_key
     AWS_REGION=your_region
+    MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0
     BEDROCK_MAX_TOKENS=500
     BEDROCK_TEMPERATURE=0.7
 
     ELASTICSEARCH_URL=https://your-elasticsearch-url
     ELASTICSEARCH_API_KEY=your-api-key-here
     ELASTICSEARCH_INDEX=knowledge_base
+    ELASTICSEARCH_CONTENT_FIELD=content
+    ELASTICSEARCH_SEMANTIC_FIELD=semantic_content
+    ELASTICSEARCH_ELSER_MODEL_ID=.elser_model_1
+    ELASTICSEARCH_INFERENCE_ID=elser-sparse-embedding
+    ELASTICSEARCH_TEST_QUERY="What is Elasticsearch? or something relevant to your data"
+    ELASTICSEARCH_KEYWORD_MIN_SCORE=0.5
+    ELASTICSEARCH_SEMANTIC_MIN_SCORE=0.5
 
     PROMPT_TEMPLATE="You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
     ```
@@ -141,11 +149,16 @@ ai-chatbot/
 
   // Load environment variables
   const PROMPT_TEMPLATE = process.env.PROMPT_TEMPLATE || "You are a helpful AI assistant. Use the following context to answer the user's question. If the context doesn't contain relevant information, use your general knowledge to provide a helpful response. Always format your response using Markdown for better readability.\n\nContext:\n{context}\n\nUser: {question}\n\nAssistant:"
+  const MODEL_ID = process.env.MODEL_ID || 'anthropic.claude-3-sonnet-20240229-v1:0'
   const MAX_TOKENS = parseInt(process.env.BEDROCK_MAX_TOKENS, 10) || 500;
   const TEMPERATURE = parseFloat(process.env.BEDROCK_TEMPERATURE) || 0.7;
   const ELASTICSEARCH_INDEX = process.env.ELASTICSEARCH_INDEX || 'knowledge_base';
   const ELASTICSEARCH_CONTENT_FIELD = process.env.ELASTICSEARCH_CONTENT_FIELD || 'content';
   const ELASTICSEARCH_SEMANTIC_FIELD = process.env.ELASTICSEARCH_SEMANTIC_FIELD || 'semantic_content';
+  const ELASTICSEARCH_ELSER_MODEL_ID = process.env.ELASTICSEARCH_ELSER_MODEL_ID || '.elser_model_1';
+  const ELASTICSEARCH_TEST_QUERY = process.env.ELASTICSEARCH_TEST_QUERY || 'What is Elasticsearch?';
+  const ELASTICSEARCH_KEYWORD_MIN_SCORE = parseFloat(process.env.ELASTICSEARCH_KEYWORD_MIN_SCORE) || 0.5;
+  const ELASTICSEARCH_SEMANTIC_MIN_SCORE = parseFloat(process.env.ELASTICSEARCH_SEMANTIC_MIN_SCORE) || 0.5;
 
   // Diagnostic function to check Elasticsearch setup
   async function checkElasticsearchSetup() {
@@ -155,13 +168,17 @@ ai-chatbot/
 
       if (indexExists) {
         const mapping = await elasticsearchClient.indices.getMapping({ index: ELASTICSEARCH_INDEX });
-        console.log('Index mapping:', JSON.stringify(mapping, null, 2));
+        console.log('Mapping exists:', !!mapping);
+        console.log('Mapping has content:', mapping && Object.keys(mapping).length > 0);
+        // console.log('Index mapping:', JSON.stringify(mapping, null, 2));
 
         const sampleDoc = await elasticsearchClient.search({
           index: ELASTICSEARCH_INDEX,
           body: { query: { match_all: {} }, size: 1 }
         });
-        console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
+        console.log('SampleDoc exists:', !!sampleDoc);
+        console.log('SampleDoc has content:', sampleDoc && sampleDoc.hits && sampleDoc.hits.hits && sampleDoc.hits.hits.length > 0);
+        // console.log('Sample document:', JSON.stringify(sampleDoc.hits.hits[0], null, 2));
       }
 
       // Check Elasticsearch version
@@ -170,7 +187,7 @@ ai-chatbot/
 
       // Check ELSER model status
       try {
-        const modelInfo = await elasticsearchClient.ml.getTrainedModels({ model_id: ".elser_model_1" });
+        const modelInfo = await elasticsearchClient.ml.getTrainedModels({ model_id: ELASTICSEARCH_ELSER_MODEL_ID });
         console.log('ELSER model info:', JSON.stringify(modelInfo, null, 2));
       } catch (modelError) {
         console.error('Error checking ELSER model:', modelError);
@@ -178,9 +195,12 @@ ai-chatbot/
 
       // Perform a test search
       console.log('Performing test search...');
-      const testQuery = 'elasticsearch';
-      const testResult = await searchElasticsearch(testQuery);
-      console.log('Test search result:', testResult);
+      const testResult = await searchElasticsearch(ELASTICSEARCH_TEST_QUERY);
+      console.log('Test search result:', testResult ? 'SUCCESS ✅' : 'FAIL ❌');
+      // Optional: Log the length of the result if successful
+      if (testResult) {
+        console.log(`Found ${testResult.length} characters of context data`);
+      }
 
     } catch (error) {
       console.error('Error checking Elasticsearch setup:', error);
@@ -196,12 +216,25 @@ ai-chatbot/
         query: {
           bool: {
             should: [
-              { match: { [ELASTICSEARCH_CONTENT_FIELD]: query } },
               {
-                semantic: {
-                  field: ELASTICSEARCH_SEMANTIC_FIELD,
-                  query: query,
-                  boost: 2  // Give more weight to semantic search
+                function_score: {
+                  query: {
+                    match: {
+                      [ELASTICSEARCH_CONTENT_FIELD]: query
+                    }
+                  },
+                  min_score: ELASTICSEARCH_KEYWORD_MIN_SCORE
+                }
+              },
+              {
+                function_score: {
+                  query: {
+                    semantic: {
+                      field: ELASTICSEARCH_SEMANTIC_FIELD,
+                      query: query
+                    }
+                  },
+                  min_score: ELASTICSEARCH_SEMANTIC_MIN_SCORE
                 }
               }
             ]
@@ -220,7 +253,34 @@ ai-chatbot/
       console.log('Elasticsearch result hits:', result.hits.total.value);
 
       if (result.hits && result.hits.hits && result.hits.hits.length > 0) {
-        return result.hits.hits.map(hit => hit._source[ELASTICSEARCH_CONTENT_FIELD]).join('\n\n');
+        // Log each hit's content for inspection
+        console.log('Elasticsearch hits details:');
+        result.hits.hits.forEach((hit, index) => {
+          // console.log(`Hit ${index + 1} _source:`, JSON.stringify(hit._source, null, 2));
+          
+          // Get the content field, handling potential nested fields
+          const contentValue = getNestedProperty(hit._source, ELASTICSEARCH_CONTENT_FIELD);
+          console.log(`Hit ${index + 1} content field (${ELASTICSEARCH_CONTENT_FIELD}):`, 
+            contentValue || 'FIELD NOT FOUND');
+        });
+        
+        // Format each document as a JSON string with its metadata
+        const contextString = result.hits.hits
+          .map(hit => {
+            // Create an object with document metadata and source
+            const documentWithMetadata = {
+              _id: hit._id,
+              _score: hit._score,
+              _index: hit._index,
+              data: hit._source
+            };
+            
+            // Format as a markdown code block with JSON
+            return `\`\`\`json\n${JSON.stringify(documentWithMetadata, null, 2)}\n\`\`\``;
+          })
+          .join('\n\n');
+          
+        return contextString;
       } else {
         console.log('No hits found in Elasticsearch result');
         return '';
@@ -234,6 +294,27 @@ ai-chatbot/
     }
   }
 
+  // Helper function to get nested properties using dot notation
+  function getNestedProperty(obj, path) {
+    // Handle direct property access first
+    if (obj[path] !== undefined) {
+      return obj[path];
+    }
+    
+    // Handle nested properties
+    const parts = path.split('.');
+    let current = obj;
+    
+    for (let i = 0; i < parts.length; i++) {
+      if (current === undefined || current === null) {
+        return undefined;
+      }
+      current = current[parts[i]];
+    }
+    
+    return current;
+  }
+
   router.get('/', async (req, res) => {
     console.log('Received GET request to /api/chat');
     const message = req.query.message;
@@ -245,14 +326,20 @@ ai-chatbot/
 
     try {
       const context = await searchElasticsearch(message);
+      if (context && context.length > 0) {
+        // Check if the context contains only whitespace characters
+        if (context.trim() === '') {
+          console.log('Warning: Context contains only whitespace characters');
+        }
+      }
 
       const formattedPrompt = PROMPT_TEMPLATE
         .replace('{context}', context)
         .replace('{question}', message);
-      console.log('Formatted Prompt:', formattedPrompt);
+      // console.log('Formatted Prompt:', formattedPrompt);
 
       const params = {
-        modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+        modelId: MODEL_ID,
         contentType: "application/json",
         accept: "application/json",
         body: JSON.stringify({
@@ -461,22 +548,37 @@ ai-chatbot/
   `client/src/app.jsx`:
 
   ```jsx
-  import React from 'react';
+  import { useState } from 'react'
+  import reactLogo from './assets/react.svg'
+  import viteLogo from '/vite.svg'
   import ChatInterface from './components/ChatInterface';
-  import './App.css';
+  import './App.css'
 
   function App() {
+    const [count, setCount] = useState(0)
+
     return (
-      <div className="App">
+      <>
+        <div>
+          <a href="https://vite.dev" target="_blank">
+            <img src={viteLogo} className="logo" alt="Vite logo" />
+          </a>
+          <a href="https://react.dev" target="_blank">
+            <img src={reactLogo} className="logo react" alt="React logo" />
+          </a>
+        </div>
         <h1>AI Chatbot</h1>
         <div className="chat-container">
           <ChatInterface />
         </div>
-      </div>
-    );
+        <p className="read-the-docs">
+          Click on the Vite and React logos to learn more
+        </p>
+      </>
+    )
   }
 
-  export default App;
+  export default App
   ```
 
   `client/src/main.jsx`:
@@ -502,6 +604,43 @@ ai-chatbot/
     width: 100%;
     margin: 0;
     padding: 0;
+  }
+
+
+  .logo {
+    height: 6em;
+    padding: 1.5em;
+    will-change: filter;
+    transition: filter 300ms;
+  }
+  .logo:hover {
+    filter: drop-shadow(0 0 2em #646cffaa);
+  }
+  .logo.react:hover {
+    filter: drop-shadow(0 0 2em #61dafbaa);
+  }
+
+  @keyframes logo-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a:nth-of-type(2) .logo {
+      animation: logo-spin infinite 20s linear;
+    }
+  }
+
+  .card {
+    padding: 2em;
+  }
+
+  .read-the-docs {
+    color: #888;
   }
 
   .App {
@@ -594,6 +733,7 @@ ai-chatbot/
     font-style: italic;
     color: #888;
   }
+
   ```
 
 10. Update `client/vite.config.js`
@@ -602,7 +742,7 @@ ai-chatbot/
   import { defineConfig } from 'vite'
   import react from '@vitejs/plugin-react'
 
-  // https://vitejs.dev/config/
+  // https://vite.dev/config/
   export default defineConfig({
     plugins: [react()],
     server: {
