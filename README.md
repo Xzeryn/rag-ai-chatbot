@@ -1,4 +1,4 @@
-# Creating a RAG AI Chatbot with React, Node.js, Vite, Amazon Bedrock (Claude 3.5 Sonnet), and Elasticsearch using Semantic Search
+# Creating a RAG AI Chatbot with React, Node.js, Vite, Amazon Bedrock (Claude 3.7 Sonnet), and Elasticsearch using Semantic Search
 
 ## Directory Structure
 
